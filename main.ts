@@ -133,12 +133,17 @@ async function getDownloadURL(): Promise<string> {
 // Uses the REST API (/users/<login>/keys) which works for EMU accounts,
 // unlike the public github.com/<login>.keys endpoint which returns 404 for
 // usernames containing underscores or belonging to EMU orgs.
-async function fetchGitHubUserKeys(username: string): Promise<string[]> {
+async function fetchGitHubUserKeys(username: string, token?: string): Promise<string[]> {
 	const url = `https://api.github.com/users/${encodeURIComponent(username)}/keys`;
 	core.debug(`Fetching SSH keys for ${username} from ${url}`);
 
+	const headers: Record<string, string> = { "User-Agent": "breakpoint-action" };
+	if (token) {
+		headers["Authorization"] = `Bearer ${token}`;
+	}
+
 	return new Promise((resolve, reject) => {
-		https.get(url, { headers: { "User-Agent": "breakpoint-action" } }, (res) => {
+		https.get(url, { headers }, (res) => {
 			if (res.statusCode !== 200) {
 				reject(new Error(
 					`Failed to fetch SSH keys for GitHub user "${username}": ` +
@@ -174,6 +179,7 @@ async function createConfiguration(): Promise<WaitConfig> {
 
 	const collectedKeys: string[] = [];
 	const resolvedUsers = new Set<string>();
+	const token = core.getInput("token") || undefined;
 
 	// Auto-include the workflow actor (PR author / manual trigger user)
 	const includeActor = core.getInput("include-actor") !== "false";
@@ -195,7 +201,7 @@ async function createConfiguration(): Promise<WaitConfig> {
 	}
 
 	for (const username of resolvedUsers) {
-		const keys = await fetchGitHubUserKeys(username);
+		const keys = await fetchGitHubUserKeys(username, token);
 		if (keys.length === 0) {
 			core.warning(`No SSH keys found for GitHub user "${username}"`);
 		}

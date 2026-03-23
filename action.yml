@@ -20,6 +20,10 @@ inputs:
     description: "Auto-include the GitHub actor (github.actor) as an authorized user. Bot actors (ending in [bot]) are excluded. Default: true"
     required: false
     default: "true"
+  token:
+    description: "GitHub token for API calls (fetching SSH keys). Required for EMU accounts. Defaults to GITHUB_TOKEN."
+    required: false
+    default: ${{ github.token }}
   authorized-keys:
     description: "The comma-separated list of authorized SSH keys."
     required: false
