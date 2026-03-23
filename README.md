@@ -8,7 +8,7 @@ Pause, debug with SSH, and resume your GitHub Actions jobs with [namespacelabs/b
 
 ### EMU account support
 
-The upstream action passes GitHub usernames to the Go binary, which fetches SSH keys from `github.com/<username>.keys`. This endpoint returns 404 for EMU accounts (usernames containing underscores, e.g. `Tobias-Lekman_evinova`).
+The upstream action passes GitHub usernames to the Go binary, which fetches SSH keys from `github.com/<username>.keys`. This endpoint returns 404 for EMU accounts (usernames containing underscores, e.g. `Jane-Doe_contoso`).
 
 This fork fetches SSH keys via the GitHub REST API (`api.github.com/users/<username>/keys`) in the TypeScript wrapper, then passes the resolved public keys to the binary as `authorized_keys`. The API endpoint works for all account types including EMU.
 
