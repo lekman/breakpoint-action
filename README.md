@@ -27,7 +27,7 @@ Gate the breakpoint on debug mode so it never runs in normal CI:
 ```yaml
 - name: Breakpoint
   if: runner.debug == '1'
-  uses: lekman/breakpoint-action@v0
+  uses: lekman/breakpoint-action@45858d51f4ad94b1466c01988d2990ef7ae97c46 # v0.1.0
   with:
     duration: 30m
 ```
@@ -39,7 +39,7 @@ To trigger: re-run the failed job with **"Enable debug logging"** checked in the
 ```yaml
 - name: Breakpoint if tests failed
   if: failure()
-  uses: lekman/breakpoint-action@v0
+  uses: lekman/breakpoint-action@45858d51f4ad94b1466c01988d2990ef7ae97c46 # v0.1.0
   with:
     duration: 30m
     authorized-users: jack123, alice321
@@ -49,7 +49,7 @@ To trigger: re-run the failed job with **"Enable debug logging"** checked in the
 
 ```yaml
 - name: Breakpoint to check build results
-  uses: lekman/breakpoint-action@v0
+  uses: lekman/breakpoint-action@45858d51f4ad94b1466c01988d2990ef7ae97c46 # v0.1.0
   with:
     duration: 30m
     authorized-users: jack123, alice321
@@ -71,7 +71,7 @@ When Breakpoint activates, it outputs the SSH connection details:
 
 ```yaml
 - name: Start Breakpoint in the background
-  uses: lekman/breakpoint-action@v0
+  uses: lekman/breakpoint-action@45858d51f4ad94b1466c01988d2990ef7ae97c46 # v0.1.0
   with:
     mode: background
     authorized-users: jack123, alice321
