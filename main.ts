@@ -3,6 +3,7 @@ import * as exec from "@actions/exec";
 import * as tc from "@actions/tool-cache";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import * as https from "node:https";
 import { getModeFromInput } from "./lib";
 
 const defaultBreakpointVersion = "0.0.24";
@@ -20,7 +21,6 @@ interface WaitConfig {
 	endpoint: string;
 	duration: string;
 	authorized_keys?: string[];
-	authorized_github_users?: string[];
 	shell?: string[];
 	allowed_ssh_users: string[];
 	webhooks?: Webhook[];
@@ -66,7 +66,7 @@ async function installBreakpoint(): Promise<void> {
 
 async function runBreakpoint(): Promise<void> {
 	const configFile = tmpFile("config.json");
-	const config = createConfiguration();
+	const config = await createConfiguration();
 
 	const mode = getModeFromInput();
 
@@ -129,29 +129,93 @@ async function getDownloadURL(): Promise<string> {
 	return `https://github.com/namespacelabs/breakpoint/releases/download/v${version}/breakpoint_${os}_${arch}.tar.gz`;
 }
 
-function createConfiguration(): WaitConfig {
+// Fetch SSH public keys for a GitHub user via the API.
+// Uses the REST API (/users/<login>/keys) which works for EMU accounts,
+// unlike the public github.com/<login>.keys endpoint which returns 404 for
+// usernames containing underscores or belonging to EMU orgs.
+async function fetchGitHubUserKeys(username: string): Promise<string[]> {
+	const url = `https://api.github.com/users/${encodeURIComponent(username)}/keys`;
+	core.debug(`Fetching SSH keys for ${username} from ${url}`);
+
+	return new Promise((resolve, reject) => {
+		https.get(url, { headers: { "User-Agent": "breakpoint-action" } }, (res) => {
+			if (res.statusCode !== 200) {
+				reject(new Error(
+					`Failed to fetch SSH keys for GitHub user "${username}": ` +
+					`HTTP ${res.statusCode} from ${url}`
+				));
+				return;
+			}
+
+			let data = "";
+			res.on("data", (chunk: Buffer) => { data += chunk.toString(); });
+			res.on("end", () => {
+				try {
+					const keys = JSON.parse(data) as Array<{ key: string }>;
+					const publicKeys = keys.map((k) => k.key);
+					core.info(`Fetched ${publicKeys.length} SSH key(s) for ${username}`);
+					resolve(publicKeys);
+				} catch (err) {
+					reject(new Error(`Failed to parse SSH keys response for "${username}": ${err}`));
+				}
+			});
+		}).on("error", (err) => {
+			reject(new Error(`Network error fetching SSH keys for "${username}": ${err.message}`));
+		});
+	});
+}
+
+async function createConfiguration(): Promise<WaitConfig> {
 	const config: WaitConfig = {
 		endpoint: core.getInput("endpoint"),
 		duration: core.getInput("duration"),
 		allowed_ssh_users: ["runner"],
 	};
 
-	let authorized = false;
+	const collectedKeys: string[] = [];
+	const resolvedUsers = new Set<string>();
+
+	// Auto-include the workflow actor (PR author / manual trigger user)
+	const includeActor = core.getInput("include-actor") !== "false";
+	if (includeActor) {
+		const actor = process.env.GITHUB_ACTOR;
+		if (actor && !actor.endsWith("[bot]")) {
+			resolvedUsers.add(actor);
+			core.info(`Auto-included workflow actor: ${actor}`);
+		} else if (actor) {
+			core.debug(`Skipped bot actor: ${actor}`);
+		}
+	}
+
 	const authorizedUsers: string = core.getInput("authorized-users");
 	if (authorizedUsers) {
-		config.authorized_github_users = authorizedUsers.split(",").map((u) => String(u).trim());
-		authorized = true;
+		for (const u of authorizedUsers.split(",")) {
+			resolvedUsers.add(String(u).trim());
+		}
+	}
+
+	for (const username of resolvedUsers) {
+		const keys = await fetchGitHubUserKeys(username);
+		if (keys.length === 0) {
+			core.warning(`No SSH keys found for GitHub user "${username}"`);
+		}
+		collectedKeys.push(...keys);
 	}
 
 	const authorizedKeys: string = core.getInput("authorized-keys");
 	if (authorizedKeys) {
-		config.authorized_keys = authorizedKeys.split(",").map((k) => String(k).trim());
-		authorized = true;
+		collectedKeys.push(...authorizedKeys.split(",").map((k) => String(k).trim()));
 	}
 
-	if (!authorized) {
-		throw new Error("Neither 'authorized-users' nor 'authorized-keys' is provided.");
+	if (collectedKeys.length === 0) {
+		throw new Error(
+			"No SSH keys found. Provide 'authorized-users' (with SSH keys on their GitHub profile) " +
+			"or 'authorized-keys' directly."
+		);
 	}
+
+	config.authorized_keys = collectedKeys;
+	core.info(`Authorized ${collectedKeys.length} SSH key(s) total`);
 
 	const webhookDefFile: string = core.getInput("webhook-definition");
 	if (webhookDefFile) {

@@ -6751,6 +6751,8 @@ var tool_cache = __nccwpck_require__(7784);
 const external_node_fs_namespaceObject = require("node:fs");
 ;// CONCATENATED MODULE: external "node:path"
 const external_node_path_namespaceObject = require("node:path");
+;// CONCATENATED MODULE: external "node:https"
+const external_node_https_namespaceObject = require("node:https");
 ;// CONCATENATED MODULE: ./lib.ts
 
 function getModeFromInput() {
@@ -6771,6 +6773,7 @@ var __awaiter = (undefined && undefined.__awaiter) || function (thisArg, _argume
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+
 
 
 
@@ -6821,7 +6824,7 @@ function installBreakpoint() {
 function runBreakpoint() {
     return __awaiter(this, void 0, void 0, function* () {
         const configFile = tmpFile("config.json");
-        const config = createConfiguration();
+        const config = yield createConfiguration();
         const mode = getModeFromInput();
         core.debug(`Mode: ${mode}`);
         if (mode === "background") {
@@ -6877,47 +6880,106 @@ function getDownloadURL() {
         return `https://github.com/namespacelabs/breakpoint/releases/download/v${version}/breakpoint_${os}_${arch}.tar.gz`;
     });
 }
+// Fetch SSH public keys for a GitHub user via the API.
+// Uses the REST API (/users/<login>/keys) which works for EMU accounts,
+// unlike the public github.com/<login>.keys endpoint which returns 404 for
+// usernames containing underscores or belonging to EMU orgs.
+function fetchGitHubUserKeys(username) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const url = `https://api.github.com/users/${encodeURIComponent(username)}/keys`;
+        core.debug(`Fetching SSH keys for ${username} from ${url}`);
+        return new Promise((resolve, reject) => {
+            external_node_https_namespaceObject.get(url, { headers: { "User-Agent": "breakpoint-action" } }, (res) => {
+                if (res.statusCode !== 200) {
+                    reject(new Error(`Failed to fetch SSH keys for GitHub user "${username}": ` +
+                        `HTTP ${res.statusCode} from ${url}`));
+                    return;
+                }
+                let data = "";
+                res.on("data", (chunk) => { data += chunk.toString(); });
+                res.on("end", () => {
+                    try {
+                        const keys = JSON.parse(data);
+                        const publicKeys = keys.map((k) => k.key);
+                        core.info(`Fetched ${publicKeys.length} SSH key(s) for ${username}`);
+                        resolve(publicKeys);
+                    }
+                    catch (err) {
+                        reject(new Error(`Failed to parse SSH keys response for "${username}": ${err}`));
+                    }
+                });
+            }).on("error", (err) => {
+                reject(new Error(`Network error fetching SSH keys for "${username}": ${err.message}`));
+            });
+        });
+    });
+}
 function createConfiguration() {
-    const config = {
-        endpoint: core.getInput("endpoint"),
-        duration: core.getInput("duration"),
-        allowed_ssh_users: ["runner"],
-    };
-    let authorized = false;
-    const authorizedUsers = core.getInput("authorized-users");
-    if (authorizedUsers) {
-        config.authorized_github_users = authorizedUsers.split(",").map((u) => String(u).trim());
-        authorized = true;
-    }
-    const authorizedKeys = core.getInput("authorized-keys");
-    if (authorizedKeys) {
-        config.authorized_keys = authorizedKeys.split(",").map((k) => String(k).trim());
-        authorized = true;
-    }
-    if (!authorized) {
-        throw new Error("Neither 'authorized-users' nor 'authorized-keys' is provided.");
-    }
-    const webhookDefFile = core.getInput("webhook-definition");
-    if (webhookDefFile) {
-        const webhookDef = external_node_fs_namespaceObject.readFileSync(webhookDefFile, "utf8");
-        config.webhooks = [JSON.parse(webhookDef)];
-    }
-    const shell = core.getInput("shell");
-    if (shell) {
-        config.shell = [shell];
-    }
-    else if (process.env.RUNNER_OS === "Windows") {
-        config.shell = ["c:\\windows\\system32\\cmd.exe"];
-    }
-    const slackChannel = core.getInput("slack-announce-channel");
-    if (slackChannel) {
-        const slackBot = {
-            channel: slackChannel,
-            token: "${SLACK_BOT_TOKEN}",
+    return __awaiter(this, void 0, void 0, function* () {
+        const config = {
+            endpoint: core.getInput("endpoint"),
+            duration: core.getInput("duration"),
+            allowed_ssh_users: ["runner"],
         };
-        config.slack_bot = slackBot;
-    }
-    return config;
+        const collectedKeys = [];
+        const resolvedUsers = new Set();
+        // Auto-include the workflow actor (PR author / manual trigger user)
+        const includeActor = core.getInput("include-actor") !== "false";
+        if (includeActor) {
+            const actor = process.env.GITHUB_ACTOR;
+            if (actor && !actor.endsWith("[bot]")) {
+                resolvedUsers.add(actor);
+                core.info(`Auto-included workflow actor: ${actor}`);
+            }
+            else if (actor) {
+                core.debug(`Skipped bot actor: ${actor}`);
+            }
+        }
+        const authorizedUsers = core.getInput("authorized-users");
+        if (authorizedUsers) {
+            for (const u of authorizedUsers.split(",")) {
+                resolvedUsers.add(String(u).trim());
+            }
+        }
+        for (const username of resolvedUsers) {
+            const keys = yield fetchGitHubUserKeys(username);
+            if (keys.length === 0) {
+                core.warning(`No SSH keys found for GitHub user "${username}"`);
+            }
+            collectedKeys.push(...keys);
+        }
+        const authorizedKeys = core.getInput("authorized-keys");
+        if (authorizedKeys) {
+            collectedKeys.push(...authorizedKeys.split(",").map((k) => String(k).trim()));
+        }
+        if (collectedKeys.length === 0) {
+            throw new Error("No SSH keys found. Provide 'authorized-users' (with SSH keys on their GitHub profile) " +
+                "or 'authorized-keys' directly.");
+        }
+        config.authorized_keys = collectedKeys;
+        core.info(`Authorized ${collectedKeys.length} SSH key(s) total`);
+        const webhookDefFile = core.getInput("webhook-definition");
+        if (webhookDefFile) {
+            const webhookDef = external_node_fs_namespaceObject.readFileSync(webhookDefFile, "utf8");
+            config.webhooks = [JSON.parse(webhookDef)];
+        }
+        const shell = core.getInput("shell");
+        if (shell) {
+            config.shell = [shell];
+        }
+        else if (process.env.RUNNER_OS === "Windows") {
+            config.shell = ["c:\\windows\\system32\\cmd.exe"];
+        }
+        const slackChannel = core.getInput("slack-announce-channel");
+        if (slackChannel) {
+            const slackBot = {
+                channel: slackChannel,
+                token: "${SLACK_BOT_TOKEN}",
+            };
+            config.slack_bot = slackBot;
+        }
+        return config;
+    });
 }
 function tmpFile(file) {
     const tmpDir = external_node_path_namespaceObject.join(process.env.RUNNER_TEMP, "breakpoint");

@@ -16,6 +16,10 @@ inputs:
   authorized-users:
     description: "The comma-separated list of authorized GitHub users."
     required: false
+  include-actor:
+    description: "Auto-include the GitHub actor (github.actor) as an authorized user. Bot actors (ending in [bot]) are excluded. Default: true"
+    required: false
+    default: "true"
   authorized-keys:
     description: "The comma-separated list of authorized SSH keys."
     required: false

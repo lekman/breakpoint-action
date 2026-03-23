@@ -1,72 +1,61 @@
-# Breakpoint
+# Breakpoint (EMU-compatible fork)
 
-Pause, debug with SSH and resume your GitHub Actions jobs with [namespacelabs/breakpoint](https://github.com/namespacelabs/breakpoint).
+Fork of [namespacelabs/breakpoint-action](https://github.com/namespacelabs/breakpoint-action) with fixes for GitHub Enterprise Managed Users (EMU).
+
+Pause, debug with SSH, and resume your GitHub Actions jobs with [namespacelabs/breakpoint](https://github.com/namespacelabs/breakpoint).
+
+## Changes from upstream
+
+### EMU account support
+
+The upstream action passes GitHub usernames to the Go binary, which fetches SSH keys from `github.com/<username>.keys`. This endpoint returns 404 for EMU accounts (usernames containing underscores, e.g. `Tobias-Lekman_evinova`).
+
+This fork fetches SSH keys via the GitHub REST API (`api.github.com/users/<username>/keys`) in the TypeScript wrapper, then passes the resolved public keys to the binary as `authorized_keys`. The API endpoint works for all account types including EMU.
+
+### Auto-include workflow actor
+
+New input `include-actor` (default: `true`). When enabled, the action reads `GITHUB_ACTOR` and adds that user's SSH keys automatically. Bot actors (usernames ending in `[bot]`) are skipped.
+
+This means you can use the breakpoint without hardcoding usernames — whoever triggered the workflow (PR author, manual dispatch user) is authorized to SSH in.
 
 ## Usage
 
-### Pause on failure
+### Debug-only breakpoint (recommended)
 
-The following example shows how to define a step in a GitHub Actions job to run
-`breakpoint` in case of job's failure (so it won't pause successful runs):
+Gate the breakpoint on debug mode so it never runs in normal CI:
 
 ```yaml
-jobs:
-  tests:
-    runs-on: ubuntu-latest
+- name: Breakpoint
+  if: runner.debug == '1'
+  uses: lekman/breakpoint-action@v0
+  with:
+    duration: 30m
+```
 
-    permissions:
-      id-token: write
-      contents: read
+To trigger: re-run the failed job with **"Enable debug logging"** checked in the GitHub Actions UI. The action auto-includes the workflow actor — no `authorized-users` needed.
 
-    steps:
-      - name: Checkout the repository
-        uses: actions/checkout@v4
+### Pause on failure
 
-      - name: Run tests
-        shell: bash
-        run: ...
-
-      - name: Breakpoint if tests failed
-        if: failure()
-        uses: namespacelabs/breakpoint-action@v0
-        with:
-          duration: 30m
-          authorized-users: jack123, alice321
+```yaml
+- name: Breakpoint if tests failed
+  if: failure()
+  uses: lekman/breakpoint-action@v0
+  with:
+    duration: 30m
+    authorized-users: jack123, alice321
 ```
 
 ### Pause at any step
 
-Or it can pause workflow jobs at any step:
-
 ```yaml
-jobs:
-  tests:
-    runs-on: ubuntu-latest
-
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-      - name: Checkout the repository
-        uses: actions/checkout@v4
-
-      - name: Build images
-        shell: bash
-        run: docker build .
-
-      - name: Breakpoint to check the build results
-        uses: namespacelabs/breakpoint-action@v0
-        with:
-          duration: 30m
-          authorized-users: jack123, alice321
-
-      - name: Run tests
-        shell: bash
-        run: ...
+- name: Breakpoint to check build results
+  uses: lekman/breakpoint-action@v0
+  with:
+    duration: 30m
+    authorized-users: jack123, alice321
 ```
 
-When Breakpoint activates, it will output on a regular basis how much time left there is in the breakpoint, and which address to SSH to get to the workflow.
+When Breakpoint activates, it outputs the SSH connection details:
 
 ```bash
 ┌───────────────────────────────────────────────────────────────────────────┐
@@ -80,33 +69,12 @@ When Breakpoint activates, it will output on a regular basis how much time left 
 
 ### Run in the background
 
-Breakpoint can also be started in the background to allow connecting at any point during the workflow.
-This allows inspecting long-running steps or debugging stuckness.
-
-Breakpoint will keep your workflow running after completion while there are active SSH connections.
-
 ```yaml
-jobs:
-  tests:
-    runs-on: ubuntu-latest
-
-    permissions:
-      id-token: write
-      contents: read
-
-    steps:
-      - name: Checkout the repository
-        uses: actions/checkout@v4
-
-      - name: Start Breakpoint in the background
-        uses: namespacelabs/breakpoint-action@v0
-        with:
-          mode: background
-          authorized-users: jack123, alice321
-
-      - name: Run tests
-        shell: bash
-        run: ...
+- name: Start Breakpoint in the background
+  uses: lekman/breakpoint-action@v0
+  with:
+    mode: background
+    authorized-users: jack123, alice321
 ```
 
 > [!NOTE]
@@ -115,51 +83,20 @@ jobs:
 
 ## Configuration
 
-This action offers inputs that you can use to configure `breakpoint` behavior:
+| Input | Default | Description |
+|-------|---------|-------------|
+| `duration` | `30m` | Initial breakpoint duration. Ignored in background mode. Format: `30s`, `2h5m`, etc. |
+| `mode` | `pause` | `pause` blocks the workflow. `background` runs alongside other steps. |
+| `authorized-users` | — | Comma-separated GitHub usernames. SSH keys fetched via API. |
+| `include-actor` | `true` | Auto-include `GITHUB_ACTOR` as an authorized user. Bot actors (`[bot]`) are skipped. |
+| `authorized-keys` | — | Comma-separated SSH public keys (bypass GitHub lookup). |
+| `webhook-definition` | — | Path to a webhook JSON file with `url` and `payload` fields. |
+| `slack-announce-channel` | — | Slack channel for breakpoint notifications. Requires `SLACK_BOT_TOKEN` env var. |
+| `shell` | `/bin/bash` | Path to the login shell. |
+| `endpoint` | `rendezvous.namespace.so:5000` | QUIC endpoint of the breakpoint rendezvous server. |
 
-- `duration` - is the initial duration of a breakpoint started by the action.
-  A duration string is a possibly sequence of decimal numbers a unit suffix,
-  such as "30s" or "2h5m". Valid time units are "ns", "us", "ms", "s", "m", "h".
+At least one of `authorized-users`, `authorized-keys`, or `include-actor` must result in SSH keys. The action fails if no keys are resolved.
 
-  The default value is "30m".
+## Prerequisites
 
-- `mode` - is the mode that breakpoint is started with. Either _pause_ (the default)
-  or _background_. When running in the background, Breakpoint won't block your workflow.
-  The duration input will have no effect when running in the background.
-
-  The default value is "pause"
-
-- `authorized-users` - is the comma-separated list of GitHub users that would be
-  allowed to SSH into a GitHub Runner. GitHub users would need to have their
-  public keys configured in GitHub as `breakpoint` fetches public keys from
-  GitHub and uploads them to a GitHub Runner.
-
-- `authorized-keys` - is the comma-separated list of public SSH keys that would
-  be uploaded to a GitHub Runner.
-
-- `webhook-definition` - is the path to a webhook definition file that contains
-  `url` and `payload` fields. If webhook definition is provided `breakpoint`
-  will send `POST` request to the provided `url` with the provided `payload`.
-
-  Example of such definition file for sending notifications to Slack can be
-  found [here](/.github/slack-notification.json).
-
-- `slack-announce-channel` - is a Slack channel where webhook sends and updates
-  messages about started and currently active breakpoints.
-
-  To use this feature necessary to provide `SLACK_BOT_TOKEN` environment
-  variable. See [here](https://api.slack.com/authentication/token-types) how to
-  create a bot token.
-
-- `shell` - is the path to the login shell.
-
-  The default value is "/bin/bash".
-
-- `endpoint` - is the quic endpoint of a breakpoint rendezvous server.
-  By default the action will use a [Namespace](https://namespace.so)
-  managed server - `rendezvous.namespace.so:5000`.
-  Use this option when you want to use a different server or [host your own](https://github.com/namespacelabs/breakpoint/blob/main/docs/server-setup.md)
-
-Note, that `authorized-users` and `authorized-keys` used to provided SSH access
-to a GitHub Runner. The action will fail if neither `authorized-users` nor
-`authorized-keys` is provided.
+Authorized users must have at least one **Authentication** SSH key on their GitHub profile (Settings > SSH and GPG keys). Signing-only keys are not returned by the API.
