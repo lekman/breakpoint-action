@@ -67,6 +67,16 @@ When Breakpoint activates, it outputs the SSH connection details:
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Resuming the workflow
+
+Once connected via SSH, debug the issue, then resume the workflow:
+
+```bash
+breakpoint resume
+```
+
+This releases the breakpoint and the workflow continues to the next step. If you just `exit` the SSH session without resuming, the breakpoint waits until the duration expires.
+
 ### Run in the background
 
 ```yaml
