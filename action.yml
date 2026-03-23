@@ -40,6 +40,9 @@ inputs:
     description: "The endpoint of a breakpoint rendezvous server."
     required: true
     default: "rendezvous.namespace.so:5000"
+outputs:
+  ssh-command:
+    description: "The SSH command to connect to the breakpoint (e.g. ssh -p 42507 runner@rendezvous.namespace.so)"
 runs:
   using: node24
   main: dist/main/index.js

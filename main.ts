@@ -1,6 +1,7 @@
 import * as core from "@actions/core";
 import * as exec from "@actions/exec";
 import * as tc from "@actions/tool-cache";
+import { DefaultArtifactClient } from "@actions/artifact";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as https from "node:https";
@@ -87,10 +88,37 @@ async function runBreakpoint(): Promise<void> {
 	});
 
 	core.debug(new Date().toTimeString());
+
+	// Capture stdout to extract the SSH command and set it as a step output.
+	// The breakpoint binary prints the SSH details before blocking.
+	let sshCommand = "";
+	const listeners = {
+		stdout: (data: Buffer) => {
+			const line = data.toString();
+			process.stdout.write(line);
+			const match = line.match(/ssh -p \d+ \S+/);
+			if (match && !sshCommand) {
+				sshCommand = match[0];
+				core.setOutput("ssh-command", sshCommand);
+				core.info(`SSH command: ${sshCommand}`);
+				// Upload as artifact so callers can read it while the step is still blocking
+				const sshFile = tmpFile("ssh-command.txt");
+				fs.writeFileSync(sshFile, sshCommand);
+				const artifact = new DefaultArtifactClient();
+				artifact.uploadArtifact("breakpoint-ssh", [sshFile], path.dirname(sshFile), { retentionDays: 1 })
+					.then(() => core.debug("Uploaded breakpoint-ssh artifact"))
+					.catch((err) => core.warning(`Failed to upload breakpoint artifact: ${err}`));
+			}
+		},
+		stderr: (data: Buffer) => {
+			process.stderr.write(data.toString());
+		},
+	};
+
 	if (mode === "pause") {
-		await exec.exec(`breakpoint wait --config=${configFile}`);
+		await exec.exec(`breakpoint wait --config=${configFile}`, [], { listeners, silent: true });
 	} else {
-		await exec.exec(`breakpoint start --config=${configFile}`);
+		await exec.exec(`breakpoint start --config=${configFile}`, [], { listeners, silent: true });
 	}
 	core.debug(new Date().toTimeString());
 }

@@ -4,6 +4,7 @@
 	"description": "",
 	"main": "main.ts",
 	"dependencies": {
+		"@actions/artifact": "^6.2.1",
 		"@actions/core": "^1.10.0",
 		"@actions/exec": "^1.1.1",
 		"@actions/tool-cache": "^2.0.1"
