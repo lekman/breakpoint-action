@@ -1,43 +1,54 @@
 {
-	"name": "breakpoint-action",
-	"version": "0.0.1",
-	"description": "",
-	"main": "main.ts",
-	"dependencies": {
-		"@actions/artifact": "^6.2.1",
-		"@actions/core": "^1.10.0",
-		"@actions/exec": "^1.1.1",
-		"@actions/tool-cache": "^2.0.1"
-	},
-	"scripts": {
-		"format": "prettier --write '**/*.ts'",
-		"format-check": "prettier --check '**/*.ts'",
-		"lint": "eslint *.ts",
-		"build": "concurrently 'npm run build:main' 'npm run build:post'",
-		"build:main": "ncc build main.ts --out dist/main",
-		"build:post": "ncc build post.ts --out dist/post",
-		"add": "git add dist/*"
-	},
-	"repository": "git+https://github.com/namespacelabs/breakpoint-action.git",
-	"keywords": [
-		"GitHub",
-		"Actions"
-	],
-	"author": "Namespace Labs Inc <hello@namespace.so>",
-	"license": "Apache-2.0",
-	"devDependencies": {
-		"@fastify/pre-commit": "^2.2.1",
-		"@types/node": "^16.11.7",
-		"@typescript-eslint/eslint-plugin": "^5.59.7",
-		"@typescript-eslint/parser": "^5.59.7",
-		"@vercel/ncc": "^0.34.0",
-		"concurrently": "^7.5.0",
-		"eslint": "^8.39.0",
-		"prettier": "^2.0.2",
-		"typescript": "^4.8.4"
-	},
-	"pre-commit": [
-		"build",
-		"add"
-	]
+  "name": "breakpoint-action",
+  "version": "0.0.1",
+  "description": "",
+  "main": "main.ts",
+  "dependencies": {
+    "@actions/artifact": "^6.2.1",
+    "@actions/core": "^3.0.1",
+    "@actions/exec": "^3.0.0",
+    "@actions/tool-cache": "^4.0.0"
+  },
+  "scripts": {
+    "format": "prettier --write '**/*.ts'",
+    "format-check": "prettier --check '**/*.ts'",
+    "lint": "eslint *.ts",
+    "build": "concurrently 'npm run build:main' 'npm run build:post'",
+    "build:main": "ncc build main.ts --out dist/main",
+    "build:post": "ncc build post.ts --out dist/post",
+    "add": "git add dist/*"
+  },
+  "repository": "git+https://github.com/namespacelabs/breakpoint-action.git",
+  "keywords": [
+    "GitHub",
+    "Actions"
+  ],
+  "author": "Namespace Labs Inc <hello@namespace.so>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@fastify/pre-commit": "^2.2.1",
+    "@types/node": "^16.11.7",
+    "@typescript-eslint/eslint-plugin": "^5.59.7",
+    "@typescript-eslint/parser": "^5.59.7",
+    "@vercel/ncc": "^0.34.0",
+    "concurrently": "^7.5.0",
+    "eslint": "^8.39.0",
+    "prettier": "^2.0.2",
+    "typescript": "^4.8.4"
+  },
+  "pre-commit": [
+    "build",
+    "add"
+  ],
+  "overrides": {
+    "brace-expansion@1": "^1.1.16",
+    "brace-expansion@2": "^2.1.4",
+    "js-yaml@4": "^4.3.1",
+    "undici@6": "^6.28.0",
+    "shell-quote": "^1.9.0",
+    "fast-xml-parser": "^5.7.0",
+    "fast-xml-builder": "^1.1.7",
+    "lodash": "^4.18.0",
+    "picomatch@2": "^2.3.2"
+  }
 }
